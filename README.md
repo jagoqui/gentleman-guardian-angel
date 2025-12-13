@@ -21,7 +21,8 @@
   <a href="#-providers">Providers</a> •
   <a href="#-commands">Commands</a> •
   <a href="#-configuration">Configuration</a> •
-  <a href="#-real-world-example">Example</a>
+  <a href="#-smart-caching">Caching</a> •
+  <a href="#-development">Development</a>
 </p>
 
 ---
@@ -930,33 +931,96 @@ EXCLUDE_PATTERNS="*.min.js,*.bundle.js,dist/*,build/*,*.generated.ts"
 
 ## 🧪 Development
 
+### Project Structure
+
+```
+gentleman-guardian-angel/
+├── bin/
+│   └── gga                    # Main CLI script
+├── lib/
+│   ├── providers.sh           # AI provider implementations
+│   └── cache.sh               # Smart caching logic
+├── spec/                      # ShellSpec test suite
+│   ├── spec_helper.sh         # Test setup and helpers
+│   ├── unit/
+│   │   ├── cache_spec.sh      # Cache unit tests (27 tests)
+│   │   └── providers_spec.sh  # Provider unit tests (13 tests)
+│   └── integration/
+│       └── commands_spec.sh   # CLI integration tests (28 tests)
+├── Makefile                   # Development commands
+├── .shellspec                 # Test runner config
+├── install.sh                 # Manual installer
+├── uninstall.sh               # Uninstaller
+└── README.md
+```
+
 ### Running Tests
 
-GGA uses [ShellSpec](https://shellspec.info/) for testing.
+GGA uses [ShellSpec](https://shellspec.info/) for testing - a BDD-style testing framework for shell scripts.
 
 ```bash
-# Install ShellSpec (once)
-brew install shellspec
+# Install dependencies (once)
+brew install shellspec shellcheck
 
-# Run all tests
+# Run all tests (68 total)
 make test
 
 # Run specific test suites
-make test-unit        # Unit tests only
-make test-integration # Integration tests only
+make test-unit        # Unit tests only (40 tests)
+make test-integration # Integration tests only (28 tests)
 
-# Lint shell scripts
+# Lint shell scripts with shellcheck
 make lint
 
-# Run all checks before commit
+# Run all checks before commit (lint + tests)
 make check
 ```
 
 ### Test Coverage
 
-- **68 tests** covering core functionality
-- Unit tests for `cache.sh` and `providers.sh`
-- Integration tests for all CLI commands
+| Module | Tests | Description |
+|--------|-------|-------------|
+| `cache.sh` | 27 | Hash functions, cache validation, file caching |
+| `providers.sh` | 13 | Provider parsing, validation, info display |
+| CLI commands | 28 | init, install, uninstall, run, config, cache |
+| **Total** | **68** | Full coverage of core functionality |
+
+### Adding New Tests
+
+```bash
+# Create a new spec file
+touch spec/unit/my_feature_spec.sh
+
+# Run only your new tests
+shellspec spec/unit/my_feature_spec.sh
+```
+
+---
+
+## 📋 Changelog
+
+### v2.2.0 (Latest)
+- ✅ Added comprehensive test suite with **68 tests**
+- ✅ Unit tests for `cache.sh` and `providers.sh`
+- ✅ Integration tests for all CLI commands
+- ✅ Added `Makefile` with `test`, `lint`, `check` targets
+- ✅ Fixed shellcheck warnings
+
+### v2.1.0
+- ✅ Smart caching system - skip unchanged files
+- ✅ Auto-invalidation when AGENTS.md or .gga changes
+- ✅ Cache commands: `status`, `clear`, `clear-all`
+- ✅ `--no-cache` flag to bypass caching
+
+### v2.0.0
+- ✅ Renamed to Gentleman Guardian Angel (gga)
+- ✅ Auto-migration from legacy `ai-code-review` hooks
+- ✅ Homebrew tap distribution
+
+### v1.0.0
+- ✅ Initial release with Claude, Gemini, Codex, Ollama support
+- ✅ File patterns and exclusions
+- ✅ Strict mode for CI/CD
 
 ---
 
@@ -967,6 +1031,7 @@ Contributions are welcome! Some ideas:
 - [ ] Add more providers (Copilot, Codeium, etc.)
 - [ ] Support for `.gga.yaml` format  
 - [x] ~~Caching to avoid re-reviewing unchanged files~~ ✅ Done in v2.1.0
+- [x] ~~Add test suite~~ ✅ Done in v2.2.0
 - [ ] GitHub Action version
 - [ ] Output formats (JSON, SARIF for IDE integration)
 
