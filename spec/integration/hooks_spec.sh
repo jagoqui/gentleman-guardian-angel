@@ -81,9 +81,8 @@ EOF
       # GGA line should be less than exit line (appears before)
       The value "$gga_line" should be present
       The value "$exit_line" should be present
-      # shellcheck disable=SC2154
-      [ "$gga_line" -lt "$exit_line" ]
-      The status should be success
+      # Assert GGA comes before exit - using test command with assertion
+      Assert [ "$gga_line" -lt "$exit_line" ]
     End
   End
 
