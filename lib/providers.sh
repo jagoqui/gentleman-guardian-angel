@@ -61,6 +61,7 @@ validate_provider() {
 execute_provider() {
   local provider="$1"
   local prompt="$2"
+  local timeout="${GGA_TIMEOUT:-300}"  # Default 5 minutes
   
   # Execute the provider command with prompt via stdin
   # This is the most universal method - works with gemini, claude, etc.
@@ -73,16 +74,65 @@ execute_provider() {
   echo -e "\033[0;36m━━━ Provider Output ━━━\033[0m"
   echo ""
   
-  # Execute directly and capture output
-  # Using process substitution to show output in real-time
+  # Show debug info if DEBUG_MODE is enabled
+  if [[ "${DEBUG_MODE:-false}" == "true" ]]; then
+    echo -e "\033[1;33m🔍 DEBUG MODE ENABLED\033[0m"
+    echo -e "\033[0;36mExecuting command:\033[0m $provider"
+    echo -e "\033[0;36mPrompt size:\033[0m $(wc -c < "$temp_prompt") bytes"
+    echo ""
+  fi
+  
+  # Execute with timeout and capture output
   local result
   local status
   
-  result=$(eval "cat '$temp_prompt' | $provider" 2>&1)
-  status=$?
+  # Use timeout command if available, otherwise run without it
+  if command -v timeout &> /dev/null; then
+    if [[ "${DEBUG_MODE:-false}" == "true" ]]; then
+      echo -e "\033[1;33mRunning with ${timeout}s timeout (streaming output)...\033[0m"
+      echo ""
+      # In debug mode, show output in real-time
+      timeout "$timeout" bash -c "cat '$temp_prompt' | $provider" 2>&1 | tee /dev/tty
+      status=${PIPESTATUS[0]}
+      # Also capture for processing
+      result=$(timeout "$timeout" bash -c "cat '$temp_prompt' | $provider" 2>&1)
+    else
+      echo "Running with ${timeout}s timeout..."
+      result=$(timeout "$timeout" bash -c "cat '$temp_prompt' | $provider" 2>&1)
+      status=$?
+    fi
+    
+    # Check if timeout occurred
+    if [[ $status -eq 124 ]]; then
+      echo ""
+      echo -e "\033[0;31m⏱️  Command timed out after ${timeout} seconds\033[0m"
+      echo ""
+      echo "Try:"
+      echo "  • Set GGA_TIMEOUT environment variable (e.g., export GGA_TIMEOUT=600)"
+      echo "  • Use a faster model"
+      echo "  • Reduce the number of files to review"
+      rm -f "$temp_prompt"
+      return 1
+    fi
+  else
+    if [[ "${DEBUG_MODE:-false}" == "true" ]]; then
+      echo -e "\033[1;33mRunning without timeout (streaming output)...\033[0m"
+      echo ""
+      # In debug mode, show output in real-time
+      bash -c "cat '$temp_prompt' | $provider" 2>&1 | tee /dev/tty
+      status=${PIPESTATUS[0]}
+      # Also capture for processing
+      result=$(bash -c "cat '$temp_prompt' | $provider" 2>&1)
+    else
+      result=$(bash -c "cat '$temp_prompt' | $provider" 2>&1)
+      status=$?
+    fi
+  fi
   
-  # Show the output
-  echo "$result"
+  # Show the output (only if not in debug mode, since we already showed it)
+  if [[ "${DEBUG_MODE:-false}" != "true" ]]; then
+    echo "$result"
+  fi
   echo ""
   echo -e "\033[0;36m━━━ End Output ━━━\033[0m"
   echo ""

@@ -87,6 +87,7 @@ print_help() {
   echo "  --no-cache        Force review all files, ignoring cache"
   echo "  --ci              CI mode: review files changed in last commit (HEAD~1..HEAD)"
   echo "                    Use this in GitLab CI, GitHub Actions, etc."
+  echo "  --debug           Show provider execution in real-time (verbose output)"
   echo ""
   echo -e "${BOLD}CONFIGURATION:${NC}"
   echo "  Create a ${CYAN}.gga${NC} file in your project root or"
@@ -577,6 +578,10 @@ cmd_run() {
       --ci)
         ci_mode=true
         use_cache=false  # Cache doesn't make sense in CI
+        ;;
+      --debug)
+        DEBUG_MODE="true"
+        export DEBUG_MODE
         ;;
       *)
         # Non-flag argument is the commit message file (from commit-msg hook)
