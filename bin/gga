@@ -147,6 +147,9 @@ log_error() {
 # ============================================================================
 
 load_config() {
+  # Save DEBUG_MODE if it was set by command line flag
+  local preserve_debug="${DEBUG_MODE_FROM_FLAG:-}"
+  
   # Reset to defaults
   PROVIDER=""
   FILE_PATTERNS="$DEFAULT_FILE_PATTERNS"
@@ -171,6 +174,12 @@ load_config() {
   # Environment variable overrides everything
   if [[ -n "$GGA_PROVIDER" ]]; then
     PROVIDER="$GGA_PROVIDER"
+  fi
+  
+  # Command line flag has highest priority for DEBUG_MODE
+  if [[ -n "$preserve_debug" ]]; then
+    DEBUG_MODE="$preserve_debug"
+    export DEBUG_MODE
   fi
 }
 
@@ -569,7 +578,7 @@ cmd_run() {
   local ci_mode=false
   local commit_msg_file=""
   
-  # Parse arguments
+  # Parse arguments first to detect --debug flag
   for arg in "$@"; do
     case "$arg" in
       --no-cache)
@@ -580,8 +589,9 @@ cmd_run() {
         use_cache=false  # Cache doesn't make sense in CI
         ;;
       --debug)
-        DEBUG_MODE="true"
-        export DEBUG_MODE
+        # Set flag to preserve debug mode after config load
+        DEBUG_MODE_FROM_FLAG="true"
+        export DEBUG_MODE_FROM_FLAG
         ;;
       *)
         # Non-flag argument is the commit message file (from commit-msg hook)
