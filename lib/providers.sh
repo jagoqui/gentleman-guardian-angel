@@ -21,89 +21,35 @@ NC='\033[0m'
 
 validate_provider() {
   local provider="$1"
-  local base_provider="${provider%%:*}"
-
-  case "$base_provider" in
-    claude)
-      if ! command -v claude &> /dev/null; then
-        echo -e "${RED}❌ Claude CLI not found${NC}"
-        echo ""
-        echo "Install Claude Code CLI:"
-        echo "  https://claude.ai/code"
-        echo ""
-        return 1
-      fi
-      ;;
-    gemini)
-      if ! command -v gemini &> /dev/null; then
-        echo -e "${RED}❌ Gemini CLI not found${NC}"
-        echo ""
-        echo "Install Gemini CLI:"
-        echo "  npm install -g @anthropic-ai/gemini-cli"
-        echo "  # or"
-        echo "  brew install gemini"
-        echo ""
-        return 1
-      fi
-      ;;
-    codex)
-      if ! command -v codex &> /dev/null; then
-        echo -e "${RED}❌ Codex CLI not found${NC}"
-        echo ""
-        echo "Install OpenAI Codex CLI:"
-        echo "  npm install -g @openai/codex"
-        echo "  # or"
-        echo "  brew install --cask codex"
-        echo ""
-        return 1
-      fi
-      ;;
-    opencode)
-      if ! command -v opencode &> /dev/null; then
-        echo -e "${RED}❌ OpenCode CLI not found${NC}"
-        echo ""
-        echo "Install OpenCode CLI:"
-        echo "  https://opencode.ai"
-        echo ""
-        return 1
-      fi
-      ;;
-    ollama)
-      if ! command -v ollama &> /dev/null; then
-        echo -e "${RED}❌ Ollama not found${NC}"
-        echo ""
-        echo "Install Ollama:"
-        echo "  https://ollama.ai/download"
-        echo "  # or"
-        echo "  brew install ollama"
-        echo ""
-        return 1
-      fi
-      # Check if model is specified
-      local model="${provider#*:}"
-      if [[ "$model" == "$provider" || -z "$model" ]]; then
-        echo -e "${RED}❌ Ollama requires a model${NC}"
-        echo ""
-        echo "Specify model in provider config:"
-        echo "  PROVIDER=\"ollama:llama3.2\""
-        echo "  PROVIDER=\"ollama:codellama\""
-        echo ""
-        return 1
-      fi
-      ;;
-    *)
-      echo -e "${RED}❌ Unknown provider: $provider${NC}"
-      echo ""
-      echo "Supported providers:"
-      echo "  - claude"
-      echo "  - gemini"
-      echo "  - codex"
-      echo "  - opencode"
-      echo "  - ollama:<model>"
-      echo ""
-      return 1
-      ;;
-  esac
+  
+  # Extract first command from provider string (handles spaces and args)
+  local first_cmd
+  first_cmd=$(echo "$provider" | awk '{print $1}')
+  
+  # Check if first command is available
+  if ! command -v "$first_cmd" &> /dev/null; then
+    echo -e "${RED}❌ Command not found: $first_cmd${NC}"
+    echo ""
+    echo "The PROVIDER command must be executable and available in PATH."
+    echo ""
+    echo "Current PROVIDER: $provider"
+    echo ""
+    echo "Examples of valid PROVIDER configurations:"
+    echo "  # Using local installation:"
+    echo "  PROVIDER=\"gemini\""
+    echo "  PROVIDER=\"claude\""
+    echo "  PROVIDER=\"opencode run --model anthropic/claude-opus-4-5\""
+    echo "  PROVIDER=\"ollama run llama3.2\""
+    echo ""
+    echo "  # Using npx/bunx (no local installation needed):"
+    echo "  PROVIDER=\"bunx @google/gemini-cli\""
+    echo "  PROVIDER=\"npx @google/gemini-cli\""
+    echo "  PROVIDER=\"bunx github-copilot-cli\""
+    echo ""
+    echo "Make sure '$first_cmd' is installed or use npx/bunx to run it."
+    echo ""
+    return 1
+  fi
 
   return 0
 }
@@ -115,187 +61,100 @@ validate_provider() {
 execute_provider() {
   local provider="$1"
   local prompt="$2"
-  local base_provider="${provider%%:*}"
-
-  case "$base_provider" in
-    claude)
-      execute_claude "$prompt"
-      ;;
-    gemini)
-      execute_gemini "$prompt"
-      ;;
-    codex)
-      execute_codex "$prompt"
-      ;;
-    opencode)
-      local model="${provider#*:}"
-      if [[ "$model" == "$provider" ]]; then
-        model=""
-      fi
-      execute_opencode "$model" "$prompt"
-      ;;
-    ollama)
-      local model="${provider#*:}"
-      execute_ollama "$model" "$prompt"
-      ;;
-  esac
+  
+  # Execute the provider command with prompt via stdin
+  # This is the most universal method - works with gemini, claude, etc.
+  
+  # Create temp file for prompt to handle large content safely
+  local temp_prompt
+  temp_prompt=$(mktemp)
+  printf '%s' "$prompt" > "$temp_prompt"
+  
+  echo -e "\033[0;36m━━━ Provider Output ━━━\033[0m"
+  echo ""
+  
+  # Execute directly and capture output
+  # Using process substitution to show output in real-time
+  local result
+  local status
+  
+  result=$(eval "cat '$temp_prompt' | $provider" 2>&1)
+  status=$?
+  
+  # Show the output
+  echo "$result"
+  echo ""
+  echo -e "\033[0;36m━━━ End Output ━━━\033[0m"
+  echo ""
+  
+  # Cleanup temp file
+  rm -f "$temp_prompt"
+  
+  # If command failed, show helpful error
+  if [[ $status -ne 0 ]]; then
+    echo -e "${RED}❌ Provider command failed${NC}" >&2
+    echo "" >&2
+    echo "Command: $provider" >&2
+    echo "Exit code: $status" >&2
+    echo "" >&2
+    
+    # Check for common error patterns and provide specific guidance
+    if echo "$result" | grep -qi "model.*not.*found\|404"; then
+      echo -e "\033[0;33m💡 Model Not Found:\033[0m" >&2
+      echo "  The specified model is not available." >&2
+      echo "  • Remove --model flag to use the default model" >&2
+      echo "  • Check available models for your API tier" >&2
+      echo "  • Example: PROVIDER=\"bunx @google/gemini-cli\"" >&2
+    elif echo "$result" | grep -qi "quota\|rate.limit\|429"; then
+      echo -e "\033[0;33m💡 API Quota/Rate Limit Issue:\033[0m" >&2
+      echo "  Your API provider has rate limits or quota restrictions." >&2
+      echo "  • Wait for the quota to reset (check provider's rate limit policy)" >&2
+      echo "  • Use a different model or provider" >&2
+      echo "  • Upgrade your API plan if available" >&2
+    elif echo "$result" | grep -qi "auth\|api.key\|unauthorized\|403"; then
+      echo -e "\033[0;33m💡 Authentication Issue:\033[0m" >&2
+      echo "  The provider requires authentication." >&2
+      echo "  • Set the required API key environment variable" >&2
+      echo "  • Check your provider's authentication documentation" >&2
+      echo "  • Example: export GEMINI_API_KEY='your-key-here'" >&2
+    elif echo "$result" | grep -qi "not found\|command not found\|no such"; then
+      echo -e "\033[0;33m💡 Command Not Found:\033[0m" >&2
+      echo "  The provider command is not available." >&2
+      echo "  • Install the provider locally, or" >&2
+      echo "  • Use npx/bunx to run without installing" >&2
+      echo "  • Example: PROVIDER=\"bunx @google/gemini-cli\"" >&2
+    else
+      echo -e "\033[0;33m💡 General Troubleshooting:\033[0m" >&2
+      echo "  Make sure your PROVIDER command:" >&2
+      echo "  1. Accepts input via stdin (pipe)" >&2
+      echo "  2. Returns the AI response to stdout" >&2
+      echo "  3. Includes all necessary arguments (model, API keys, etc.)" >&2
+      echo "" >&2
+      echo -e "\033[0;36mExamples:\033[0m" >&2
+      echo "  PROVIDER=\"gemini\"" >&2
+      echo "  PROVIDER=\"bunx @google/gemini-cli\"" >&2
+      echo "  PROVIDER=\"opencode run --model anthropic/claude-opus-4-5\"" >&2
+      echo "  PROVIDER=\"ollama run llama3.2\"" >&2
+    fi
+    
+    echo "" >&2
+    return 1
+  fi
+  
+  echo "$result"
+  return 0
 }
 
 # ============================================================================
-# Individual Provider Implementations
+# Note: Individual provider implementations removed
 # ============================================================================
-
-execute_claude() {
-  local prompt="$1"
-  
-  # Claude CLI accepts prompt via stdin pipe
-  # Redirect stderr to stdout to capture any error messages
-  printf '%s' "$prompt" | claude --print 2>&1
-  return "${PIPESTATUS[1]}"
-}
-
-execute_gemini() {
-  local prompt="$1"
-  
-  # Gemini CLI requires prompt as argument or via -p flag
-  # Using -p flag for explicit prompt passing
-  # Note: In CI/non-interactive environments, --yolo may be needed for auto-approval
-  gemini -p "$prompt" 2>&1
-  return $?
-}
-
-execute_codex() {
-  local prompt="$1"
-  
-  # Codex uses exec subcommand for non-interactive mode
-  # Using --output-last-message to get just the final response
-  codex exec "$prompt" 2>&1
-  return $?
-}
-
-execute_opencode() {
-  local model="$1"
-  local prompt="$2"
-  
-  # OpenCode CLI accepts prompt as positional argument
-  # opencode run [message..] - message is a positional array
-  if [[ -n "$model" ]]; then
-    opencode run --model "$model" "$prompt" 2>&1
-  else
-    opencode run "$prompt" 2>&1
-  fi
-  return $?
-}
-
-execute_ollama() {
-  local model="$1"
-  local prompt="$2"
-  local host="${OLLAMA_HOST:-http://localhost:11434}"
-  
-  # Validate OLLAMA_HOST format to prevent injection attacks
-  if ! validate_ollama_host "$host"; then
-    echo "Error: Invalid OLLAMA_HOST format. Expected: http(s)://hostname(:port)" >&2
-    return 1
-  fi
-  
-  # Use python3 + curl if available (cleaner output, supports remote hosts)
-  # Falls back to CLI with ANSI stripping if python3 is not available
-  if command -v python3 &> /dev/null && command -v curl &> /dev/null; then
-    execute_ollama_api "$model" "$prompt" "$host"
-    return $?
-  else
-    execute_ollama_cli "$model" "$prompt"
-    return $?
-  fi
-}
-
-# Validate OLLAMA_HOST to prevent command injection
-# Accepts: http(s)://hostname(:port) with optional trailing slash
-validate_ollama_host() {
-  local host="$1"
-  
-  # Regex: http or https, followed by hostname (alphanumeric, dots, hyphens), 
-  # optional port, optional trailing slash
-  if [[ "$host" =~ ^https?://[a-zA-Z0-9.-]+(:[0-9]+)?/?$ ]]; then
-    return 0
-  fi
-  return 1
-}
-
-# Execute Ollama via REST API using curl + python3
-# This approach produces clean output without terminal escape codes
-execute_ollama_api() {
-  local model="$1"
-  local prompt="$2"
-  local host="$3"
-  
-  # Build JSON payload safely using python3 to escape special characters
-  # Using stdin to avoid ARG_MAX limits with large prompts
-  local json_payload
-  if ! json_payload=$(printf '%s' "$prompt" | python3 -c "
-import sys, json
-prompt = sys.stdin.read()
-model = sys.argv[1]
-payload = json.dumps({
-    'model': model,
-    'prompt': prompt,
-    'stream': False
-})
-print(payload)
-" "$model" 2>&1); then
-    echo "Error: Failed to build JSON payload" >&2
-    echo "$json_payload" >&2
-    return 1
-  fi
-  
-  # Remove trailing slash from host if present
-  host="${host%/}"
-  
-  # Call Ollama API
-  local api_response
-  api_response=$(curl -s --fail-with-body \
-    -H "Content-Type: application/json" \
-    -d "$json_payload" \
-    "${host}/api/generate" 2>&1)
-  
-  local curl_status=$?
-  if [[ $curl_status -ne 0 ]]; then
-    echo "Error: Failed to connect to Ollama at $host" >&2
-    echo "$api_response" >&2
-    return 1
-  fi
-  
-  # Extract response safely using python3
-  printf '%s' "$api_response" | python3 -c "
-import sys, json
-try:
-    data = json.load(sys.stdin)
-    response = data.get('response', '')
-    if response:
-        print(response)
-    else:
-        error = data.get('error', 'Unknown error from Ollama')
-        print(f'Error: {error}', file=sys.stderr)
-        sys.exit(1)
-except json.JSONDecodeError as e:
-    print(f'Error: Invalid JSON response from Ollama: {e}', file=sys.stderr)
-    sys.exit(1)
-"
-  return $?
-}
-
-# Execute Ollama via CLI (fallback when python3/curl not available)
-# Strips ANSI escape codes from output to fix STATUS detection
-execute_ollama_cli() {
-  local model="$1"
-  local prompt="$2"
-  
-  # Run ollama CLI, suppress stderr (spinner/progress), strip ANSI codes from stdout
-  # The 2>/dev/null removes spinner and progress messages
-  # The sed removes any remaining ANSI escape sequences
-  ollama run "$model" "$prompt" 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g'
-  return "${PIPESTATUS[0]}"
-}
+# The new system executes provider commands directly without hardcoded
+# implementations. Users specify the full command in PROVIDER config.
+# Examples:
+#   PROVIDER="gemini"
+#   PROVIDER="bunx @google/gemini-cli"
+#   PROVIDER="opencode run --model anthropic/claude-opus-4-5"
+#   PROVIDER="ollama run llama3.2"
 
 # ============================================================================
 # Provider Info
@@ -303,32 +162,27 @@ execute_ollama_cli() {
 
 get_provider_info() {
   local provider="$1"
-  local base_provider="${provider%%:*}"
+  echo "$provider"
+}
 
-  case "$base_provider" in
-    claude)
-      echo "Anthropic Claude Code CLI"
-      ;;
-    gemini)
-      echo "Google Gemini CLI"
-      ;;
-    codex)
-      echo "OpenAI Codex CLI"
-      ;;
-    opencode)
-      local model="${provider#*:}"
-      if [[ "$model" == "$provider" ]]; then
-        echo "OpenCode CLI"
-      else
-        echo "OpenCode CLI (model: $model)"
-      fi
-      ;;
-    ollama)
-      local model="${provider#*:}"
-      echo "Ollama (model: $model)"
-      ;;
-    *)
-      echo "Unknown provider"
-      ;;
-  esac
+# ============================================================================
+# Provider Verification - Show provider configuration before executing
+# ============================================================================
+
+verify_provider_config() {
+  local provider="$1"
+  
+  echo -e "\033[1mProvider Configuration:\033[0m"
+  echo -e "  Command: \033[0;36m$provider\033[0m"
+  
+  # Try to get model info if specified in command
+  if echo "$provider" | grep -q "\-\-model"; then
+    local model
+    model=$(echo "$provider" | sed -n 's/.*--model[= ]\([^ ]*\).*/\1/p')
+    if [[ -n "$model" ]]; then
+      echo -e "  Model: \033[0;36m$model\033[0m"
+    fi
+  fi
+  
+  echo ""
 }

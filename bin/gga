@@ -9,7 +9,7 @@
 
 set -e
 
-VERSION="2.6.1"
+VERSION="2.6.3"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_DIR="$(dirname "$SCRIPT_DIR")/lib"
 
@@ -93,8 +93,13 @@ print_help() {
   echo "  ${CYAN}~/.config/gga/config${NC} for global settings."
   echo ""
   echo -e "${BOLD}CONFIG OPTIONS:${NC}"
-  echo "  PROVIDER           AI provider to use (required)"
-  echo "                     Values: claude, gemini, codex, opencode, ollama:<model>"
+  echo "  PROVIDER           AI provider command to use (required)"
+  echo "                     Command must accept stdin and output to stdout"
+  echo "                     Examples:"
+  echo "                       PROVIDER=\"gemini\""
+  echo "                       PROVIDER=\"bunx @google/gemini-cli\""
+  echo "                       PROVIDER=\"opencode run --model anthropic/claude-opus-4-5\""
+  echo "                       PROVIDER=\"ollama run llama3.2\""
   echo "  FILE_PATTERNS      File patterns to review (default: *)"
   echo "                     Example: *.ts,*.tsx,*.js,*.jsx"
   echo "  EXCLUDE_PATTERNS   Patterns to exclude from review"
@@ -240,17 +245,22 @@ cmd_init() {
 # Gentleman Guardian Angel Configuration
 # https://github.com/your-org/gga
 
-# AI Provider (required)
-# Options: claude, gemini, codex, opencode, ollama:<model>
-# Examples:
-#   PROVIDER="claude"
+# AI Provider Command (required)
+# Specify the command to execute for AI code review.
+# The command must accept input via stdin and output the review to stdout.
+#
+# Using local installations:
 #   PROVIDER="gemini"
-#   PROVIDER="codex"
-#   PROVIDER="opencode"
-#   PROVIDER="opencode:anthropic/claude-opus-4-5"
-#   PROVIDER="ollama:llama3.2"
-#   PROVIDER="ollama:codellama"
-PROVIDER="claude"
+#   PROVIDER="claude"
+#   PROVIDER="opencode run --model anthropic/claude-opus-4-5"
+#   PROVIDER="ollama run llama3.2"
+#
+# Using npx/bunx (no local installation needed):
+#   PROVIDER="bunx @google/gemini-cli"
+#   PROVIDER="npx @google/gemini-cli"
+#   PROVIDER="bunx github-copilot-cli"
+#
+PROVIDER="gemini"
 
 # File patterns to include in review (comma-separated)
 # Default: * (all files)
@@ -584,8 +594,21 @@ cmd_run() {
   if [[ -z "$PROVIDER" ]]; then
     log_error "No provider configured"
     echo ""
-    echo "Configure a provider in .gga or set GGA_PROVIDER"
-    echo "Run 'gga init' to create a config file"
+    echo "Configure a provider command in .gga or set GGA_PROVIDER environment variable"
+    echo ""
+    echo "Examples:"
+    echo "  ${BOLD}Using local installations:${NC}"
+    echo "    PROVIDER=\"gemini\""
+    echo "    PROVIDER=\"claude\""
+    echo "    PROVIDER=\"opencode run --model anthropic/claude-opus-4-5\""
+    echo "    PROVIDER=\"ollama run llama3.2\""
+    echo ""
+    echo "  ${BOLD}Using npx/bunx (no local installation):${NC}"
+    echo "    PROVIDER=\"bunx @google/gemini-cli\""
+    echo "    PROVIDER=\"npx @google/gemini-cli\""
+    echo "    PROVIDER=\"bunx github-copilot-cli\""
+    echo ""
+    echo "Run '${BOLD}gga init${NC}' to create a config file with examples"
     echo ""
     exit 1
   fi
@@ -594,6 +617,9 @@ cmd_run() {
   if ! validate_provider "$PROVIDER"; then
     exit 1
   fi
+  
+  # Verify and show provider configuration
+  verify_provider_config "$PROVIDER"
 
   # Check rules file exists
   if [[ ! -f "$RULES_FILE" ]]; then
@@ -728,7 +754,7 @@ cmd_run() {
   PROMPT=$(build_prompt "$RULES" "$files_to_review" "$use_staged" "$commit_msg")
 
   # Execute review
-  log_info "Sending to $PROVIDER for review..."
+  log_info "Sending prompt to provider..."
   echo ""
 
   RESULT=$(execute_provider "$PROVIDER" "$PROMPT")
